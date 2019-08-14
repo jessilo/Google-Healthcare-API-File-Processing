@@ -1,0 +1,104 @@
+# For uploading multiple medical records for each patient...
+
+# Importing data from synthetic mass into healthcare api readable format
+python3 smexport.py -h
+
+python3 smexport.py L6oVCIDud3Fv16uYxOIQDTGsatsM8FyG 100
+
+# Combine records into one file called "all_medical_records.ndjson"
+#python3 upload_google_fhir.py -h
+
+# Upload this combined file into Cloud Storage using console
+#Create dataset "100patientrecords" with FHIR store "demo" 
+
+# Import resources from bucket to FHIR store 
+curl -X POST \
+    -H "Authorization: Bearer "$(gcloud auth print-access-token) \
+    -H "Content-Type: application/json; charset=utf-8" \
+    --data "{
+      'contentStructure': 'BUNDLE',
+      'gcsSource': {
+        'uri': 'gs://100patientrecords/sm-sample-1564760353/*.json'
+      }
+    }" "https://healthcare.googleapis.com/v1beta1/projects/crypto-reality-242619/locations/us-central1/datasets/100patientrecords/fhirStores/demo:import"
+
+# Get operation
+curl -X GET \
+    -H "Authorization: Bearer "$(gcloud auth print-access-token) \
+    "https://healthcare.googleapis.com/v1alpha2/projects/crypto-reality-242619/locations/us-central1/datasets/100patientrecords_deid/operations/5855568533009727489"
+
+#Double check API for FHIR Store Creation 
+
+# De-identify data within Healthcare API
+curl -X POST \
+    -H "Authorization: Bearer "$(gcloud auth print-access-token) \
+    -H "Content-Type: application/json; charset=utf-8" \
+    --data "{
+      'destinationDataset': 'projects/crypto-reality-242619/locations/us-central1/datasets/100patientrecords_deid',
+      'config': {
+        'fhir': {}
+      }
+    }" "https://healthcare.googleapis.com/v1beta1/projects/crypto-reality-242619/locations/us-central1/datasets/100patientrecords:deidentify"
+
+#Double check API for FHIR Store Creation 
+#Create BigQuery dataset "100patientrecords_deid"
+
+# Export to bigquery
+curl -X POST \
+    -H "Authorization: Bearer "$(gcloud auth print-access-token) \
+    -H "Content-Type: application/json; charset=utf-8" \
+    --data "{
+      'bigqueryDestination': {
+        'datasetUri': 'bq://crypto-reality-242619.100patientrecords_deid'
+      }
+    }" "https://healthcare.googleapis.com/v1beta1/projects/crypto-reality-242619/locations/us-central1/datasets/100patientrecords_deid/fhirStores/demo:export"
+
+# BigQuery SQL convert unix microseconds to timestamp in bigquery
+SELECT TIMESTAMP_MICROS(birthDate.valueUs) FROM `crypto-reality-242619.smdeid.Patient_1562533086790548` LIMIT 1000 
+
+# BigQuery SQL select whole table plus convert timestamp from Unix to datetime
+SELECT *, TIMESTAMP_MICROS(birthDate.valueUs) as birthDate FROM `crypto-reality-242619.smdeid.Patient_1562533086790548` LIMIT 1000 
+SELECT *, TIMESTAMP_MICROS(meta.lastUpdated.valueUs) as lastUpdated FROM `crypto-reality-242619.smdeid.Patient_1562533086790548` LIMIT 1000
+
+# BigQuery SQL joining on id
+select birthdatetime, birthdateid from `crypto-reality-242619.smdeid.birthdatetime` INNER JOIN `crypto-reality-242619.smid.birthdatetimeid` ON  `crypto-reality-242619.smdeid.birthdatetime`.id.value = `crypto-reality-242619.smid.birthdatetimeid`.id.value
+
+#OTHER 
+#For 10 Patient Records...
+
+# Importing data from synthetic mass into healthcare api readable format
+python3 smexport.py -h
+python3 smexport.py L6oVCIDud3Fv16uYxOIQDTGsatsM8FyG 10
+
+# use a bash for loop to upload one file into the Google Healthcare API
+for i in {0..9}
+do
+   cat synthmass.json | jq '.entry | .['${i}'] | .resource' | curl -X POST \
+    -H "Authorization: Bearer "$(gcloud auth print-access-token) \
+    -H "Content-Type: application/fhir+json; charset=utf-8" \
+    -d @- \
+    "https://healthcare.googleapis.com/v1beta1/projects/crypto-reality-242619/locations/us-central1/datasets/smmedical/fhirStores/demo/fhir/Patient" \
+    > mass_upload_responses/${i}.json
+done
+# Search for a person
+curl -X POST \
+    --data "" \
+    -H "Authorization: Bearer "$(gcloud auth print-access-token) \
+    -H "Content-Type: application/fhir+json; charset=utf-8" \
+    "https://healthcare.googleapis.com/v1beta1/projects/crypto-reality-242619/locations/us-central1/datasets/synthmass/fhirStores/demo1/fhir/Patient/_search?family:exact=Buckridge80"
+
+# Search for females deidentified - can't search deided datasets
+curl -X POST \
+    --data "" \
+    -H "Authorization: Bearer "$(gcloud auth print-access-token) \
+    -H "Content-Type: application/fhir+json; charset=utf-8" \
+    "https://healthcare.googleapis.com/v1beta1/projects/crypto-reality-242619/locations/us-central1/datasets/synthmass_deidentified/fhirStores/demo1/fhir/Patient/_search?gender=female"
+
+# Find single patient - does not work in deided datasets
+curl -X POST \
+    --data "" \
+    -H "Authorization: Bearer "$(gcloud auth print-access-token) \
+    -H "Content-Type: application/fhir+json; charset=utf-8" \
+    "https://healthcare.googleapis.com/v1beta1/projects/crypto-reality-242619/locations/us-central1/datasets/synthmass_deidentified/fhirStores/demo1/fhir/Patient/4d5b872f-84a5-47c3-915e-d8a3f73ae496"
+
+
